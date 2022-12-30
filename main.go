@@ -1,11 +1,23 @@
 package main
 
 import (
+	"flag"
 	"log"
+	"os"
+	"runtime/pprof"
 )
 
 func main() {
-
+	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	zipReader := ReadEpub("test/Cooking with Wild Game 1 - Eda.epub")
 	err := CheckMime(zipReader.File[0])
 	if err != nil {
@@ -25,11 +37,11 @@ func main() {
 
 	pageList := EnsurePageList(structure, mappedZipFile)
 
-	bodyNode, err := GenerateNode(pageList)
+	bodyNode, err := GenerateNode(pageList, mappedZipFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	EncodeImage(mappedZipFile, bodyNode)
+
 	book, err := RenderBody(bodyNode)
 	if err != nil {
 		log.Fatal(err)

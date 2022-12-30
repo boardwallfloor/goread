@@ -3,10 +3,13 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -166,7 +169,7 @@ func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []*zi
 }
 
 // Form html with asset encoded
-func ProcessBody(page *zip.File) (*html.Node, error) {
+func GetBodiesNode(page *zip.File) (*html.Node, error) {
 	//* xhtml give are based on the structure on spine
 	//* Find body
 	//* If img tag exist replace src with encoded image
@@ -217,11 +220,52 @@ func Send(book Book) {
 		}
 	})
 	log.Println("Listening on port :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node) error {
+	var traverseBody func(*html.Node) error
+	traverseBody = func(n *html.Node) error {
+		if n.Type == html.ElementNode && n.Data == "body" {
+			n.Data = "div"
+		}
+		if n.Type == html.ElementNode && n.Data == "img" {
+			for i, v := range n.Attr {
+				if v.Key == "src" {
+					src := n.Attr[i]
+					imageStream := mappedZipFile[filepath.Base(src.Val)]
+					rc, err := imageStream.Open()
+					if err != nil {
+						return err
+					}
+					data, err := ioutil.ReadAll(rc)
+					if err != nil {
+						return err
+					}
+
+					// Encode the image data as a base64 string
+					encoded := base64.StdEncoding.EncodeToString(data)
+					rc.Close()
+					src.Val = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
+					n.Attr[i].Val = src.Val
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			traverseBody(c)
+		}
+		return nil
+	}
+
+	err := traverseBody(bodyNode)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Generate html.Node within certain time
-func GenerateNode(pageList []*zip.File) ([]*html.Node, error) {
+func GenerateNode(pageList []*zip.File, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
 	timer := time.After(4 * time.Second)
 	nodeList := []*html.Node{}
 	for _, v := range pageList {
@@ -229,8 +273,9 @@ func GenerateNode(pageList []*zip.File) ([]*html.Node, error) {
 		case <-timer:
 			return nodeList, nil
 		default:
-			body, err := ProcessBody(v)
-			nodeList = append(nodeList, body)
+			bodies, err := GetBodiesNode(v)
+			ProcessBody(mappedZipFile, bodies)
+			nodeList = append(nodeList, bodies)
 			if err != nil {
 				return nil, err
 			}
