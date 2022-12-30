@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/xml"
 	"errors"
 	"html/template"
@@ -50,7 +49,7 @@ type Package struct {
 	Spine    Spine    `xml:"spine"`
 }
 
-type Page struct {
+type Book struct {
 	Title string
 	Body  template.HTML
 }
@@ -163,7 +162,7 @@ func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []*zi
 }
 
 // Form html with asset encoded
-func ProcessBody(page *zip.File) (string, error) {
+func ProcessBody(page *zip.File) (*html.Node, error) {
 	//* xhtml give are based on the structure on spine
 	//* Find body
 	//* If img tag exist replace src with encoded image
@@ -176,7 +175,7 @@ func ProcessBody(page *zip.File) (string, error) {
 	// Parse the HTML byte slice into a node tree
 	doc, err := html.Parse(pageRc)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Find the <body> tag
@@ -193,68 +192,13 @@ func ProcessBody(page *zip.File) (string, error) {
 	}
 	findBody(doc)
 
-	// Render the contents of the <body> tag as a string
-	var bodyTmpl bytes.Buffer
-	err = html.Render(&bodyTmpl, body)
-	if err != nil {
-		return "", err
-	}
-	var strBody strings.Builder
-	_, err = strBody.Write(bodyTmpl.Bytes())
-	if err != nil {
-		return "nil", err
-	}
-	return strBody.String(), nil
+	return body, nil
 }
 
-func ProcessPage(epubMap map[string]*zip.File) {
-	// xhtml give are based on the structure on spine
-	// Find body
-	// If img tag exist replace src with encoded image
-	firstTag := getFirstTag(epubMap, ".xhtml")
-	testRead, err := firstTag.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-	// var page bytes.Buffer
-	// _, err = io.Copy(&page, testRead)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// Parse the HTML byte slice into a node tree
-	doc, err := html.Parse(testRead)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Find the <body> tag
-	var body *html.Node
-	var findBody func(*html.Node)
-	findBody = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "body" {
-			body = n
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			findBody(c)
-		}
-	}
-	findBody(doc)
-
-	// Render the contents of the <body> tag as a string
-	var bodyTmpl bytes.Buffer
-	err = html.Render(&bodyTmpl, body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//* Send it
+// * Send HTML
+func Send(book Book) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		para := Page{
-			Title: "My Page",
-			Body:  template.HTML(bodyTmpl.String()),
-		}
+
 		tmpl, err := template.ParseFiles("index.html")
 
 		if err != nil {
@@ -262,7 +206,7 @@ func ProcessPage(epubMap map[string]*zip.File) {
 			return
 		}
 
-		err = tmpl.Execute(w, para)
+		err = tmpl.Execute(w, book)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
