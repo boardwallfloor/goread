@@ -1,0 +1,3 @@
+rebrun :
+	go build
+	./goread
