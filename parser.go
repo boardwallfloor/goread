@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"html/template"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -142,7 +144,9 @@ func CreateStructure(opf *zip.File) (Package, error) {
 	return content, nil
 }
 
+// Ensuring a list that contain all valid key to mappedZipFile of the needed file since <spine> are not guaranteed to be directly corelated to reference
 func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []*zip.File {
+	log.Println("Validating book file list")
 	pageList := []*zip.File{}
 	for _, v := range structure.Spine.ItemRefs {
 		page := mappedZipFile[v.IdRef]
@@ -179,11 +183,11 @@ func ProcessBody(page *zip.File) (*html.Node, error) {
 	}
 
 	// Find the <body> tag
-	var body *html.Node
+	var bodyNode *html.Node
 	var findBody func(*html.Node)
 	findBody = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "body" {
-			body = n
+			bodyNode = n
 			return
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -192,10 +196,10 @@ func ProcessBody(page *zip.File) (*html.Node, error) {
 	}
 	findBody(doc)
 
-	return body, nil
+	return bodyNode, nil
 }
 
-// * Send HTML
+// Send HTML
 func Send(book Book) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
@@ -214,4 +218,45 @@ func Send(book Book) {
 	})
 	log.Println("Listening on port :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+// Generate html.Node within certain time
+func GenerateNode(pageList []*zip.File) ([]*html.Node, error) {
+	timer := time.After(4 * time.Second)
+	nodeList := []*html.Node{}
+	for _, v := range pageList {
+		select {
+		case <-timer:
+			return nodeList, nil
+		default:
+			body, err := ProcessBody(v)
+			nodeList = append(nodeList, body)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return nodeList, nil
+}
+
+// Render the contents of the <body> tag as a string
+func RenderBody(nodes []*html.Node) (Book, error) {
+	var bodyTmpl bytes.Buffer
+	for _, v := range nodes {
+		err := html.Render(&bodyTmpl, v)
+		if err != nil {
+			return Book{}, err
+		}
+	}
+
+	var strBody strings.Builder
+	_, err := strBody.Write(bodyTmpl.Bytes())
+	if err != nil {
+		return Book{}, err
+	}
+	book := Book{
+		Title: "My Page",
+		Body:  template.HTML(strBody.String()),
+	}
+	return book, nil
 }
