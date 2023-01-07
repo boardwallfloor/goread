@@ -25,6 +25,7 @@ func main() {
 	}
 
 	// mappedZipFile, _, err := MapContent(zipReader)
+	// _, opf, err := MapContent(zipReader)
 	mappedZipFile, opf, err := MapContent(zipReader)
 	if err != nil {
 		log.Fatal(err)
@@ -35,6 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// EnsureNav(structure.Guide.References, structure.Manifest.Items, mappedZipFile)
 	pageList := EnsurePageList(structure, mappedZipFile)
 
 	bodyNode, err := GenerateNode(pageList, mappedZipFile)
@@ -48,4 +50,5 @@ func main() {
 	}
 
 	Send(book)
+	zipReader.Close()
 }

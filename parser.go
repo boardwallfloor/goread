@@ -3,61 +3,18 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 )
-
-type ItemRef struct {
-	XMLName xml.Name
-	IdRef   string `xml:"idref,attr"`
-}
-
-type Item struct {
-	XMLName xml.Name
-	Id      string `xml:"id,attr"`
-	Href    string `xml:"href,attr"`
-	Type    string `xml:"media-type,attr"`
-}
-
-type Metadata struct {
-	XMLName xml.Name
-	Title   string `xml:"title"`
-	Creator string `xml:"creator"`
-}
-
-type Manifest struct {
-	XMLName xml.Name
-	Items   []Item `xml:"item"`
-}
-
-type Spine struct {
-	XMLName  xml.Name
-	ItemRefs []ItemRef `xml:"itemref"`
-}
-
-type Package struct {
-	XMLName  xml.Name `xml:"package"`
-	Metadata Metadata `xml:"metadata"`
-	Manifest Manifest `xml:"manifest"`
-	Spine    Spine    `xml:"spine"`
-}
-
-type Book struct {
-	Title string
-	Body  template.HTML
-}
 
 func ReadEpub(path string) *zip.ReadCloser {
 	log.Println("Reading epub")
@@ -68,33 +25,6 @@ func ReadEpub(path string) *zip.ReadCloser {
 	return r
 }
 
-// Check for mimetype file
-func CheckMime(zr *zip.File) error {
-	log.Println("Finding mimetype file")
-	if zr.Name != "mimetype" {
-		log.Fatal("mimetype file not found")
-	}
-	log.Println("mimetype found")
-	mimeRc, err := zr.Open()
-	if err != nil {
-		return err
-	}
-	defer mimeRc.Close()
-
-	st := new(strings.Builder)
-	_, err = io.Copy(st, mimeRc)
-	if err != nil {
-		return err
-	}
-	mimetype := st.String()
-	if mimetype != "application/epub+zip" {
-		return errors.New("invalid mimetype")
-	}
-	log.Printf("mimetype : %s\n", mimetype)
-	log.Println("mimetype confirmed")
-	return nil
-}
-
 // Search for content.opf
 // &
 // Map zip file with file name
@@ -102,12 +32,14 @@ func MapContent(zr *zip.ReadCloser) (map[string]*zip.File, *zip.File, error) {
 	log.Println("Searching content.opf")
 	epubMap := make(map[string]*zip.File, 0)
 	var opf *zip.File
+
 	for _, v := range zr.File {
 		epubMap[filepath.Base(v.Name)] = v
 		if filepath.Base(v.Name) == "content.opf" {
 			opf = v
 			log.Println("content.opf found")
 		}
+
 	}
 
 	if filepath.Base(opf.Name) != "content.opf" {
@@ -148,137 +80,51 @@ func CreateStructure(opf *zip.File) (Package, error) {
 }
 
 // Ensuring a list that contain all valid key to mappedZipFile of the needed file since <spine> are not guaranteed to be directly corelated to reference
-func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []*zip.File {
+func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Page {
 	log.Println("Validating book file list")
-	pageList := []*zip.File{}
-	for _, v := range structure.Spine.ItemRefs {
-		page := mappedZipFile[v.IdRef]
+	pageList := []Page{}
+	// func getnave is ranging of guides first(reference) then items(manifest) and return marker for nav file? nad map of items
 
+	for _, v := range structure.Spine.ItemRefs {
+		meta := make(map[string]string, 0)
+		page := mappedZipFile[v.IdRef]
+		meta["id"] = v.IdRef
 		if page == nil {
 			for _, item := range structure.Manifest.Items {
-				if v.IdRef == item.Id {
+				if filepath.Base(item.Id) == v.IdRef {
 					page = mappedZipFile[filepath.Base(item.Href)]
-					pageList = append(pageList, page)
+					meta["id"] = item.Href
 				}
 			}
-		} else {
-			pageList = append(pageList, page)
+			//* change to map call to items from getNav()
 		}
+
+		pageList = append(pageList, Page{Page: page, Meta: meta})
+
 	}
 	return pageList
 }
 
-// Form html with asset encoded
-func GetBodiesNode(page *zip.File) (*html.Node, error) {
-	//* xhtml give are based on the structure on spine
-	//* Find body
-	//* If img tag exist replace src with encoded image
-
-	pageRc, err := page.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Parse the HTML byte slice into a node tree
-	doc, err := html.Parse(pageRc)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find the <body> tag
-	var bodyNode *html.Node
-	var findBody func(*html.Node)
-	findBody = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "body" {
-			bodyNode = n
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			findBody(c)
-		}
-	}
-	findBody(doc)
-
-	return bodyNode, nil
-}
-
-// Send HTML
-func Send(book Book) {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-
-		tmpl, err := template.ParseFiles("index.html")
-
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		err = tmpl.Execute(w, book)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-	log.Println("Listening on port :8080")
-	// log.Fatal(http.ListenAndServe(":8080", nil))
-}
-
-func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node) error {
-	var traverseBody func(*html.Node) error
-	traverseBody = func(n *html.Node) error {
-		if n.Type == html.ElementNode && n.Data == "body" {
-			n.Data = "div"
-		}
-		if n.Type == html.ElementNode && n.Data == "img" {
-			for i, v := range n.Attr {
-				if v.Key == "src" {
-					src := n.Attr[i]
-					imageStream := mappedZipFile[filepath.Base(src.Val)]
-					rc, err := imageStream.Open()
-					if err != nil {
-						return err
-					}
-					data, err := ioutil.ReadAll(rc)
-					if err != nil {
-						return err
-					}
-
-					// Encode the image data as a base64 string
-					encoded := base64.StdEncoding.EncodeToString(data)
-					rc.Close()
-					src.Val = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
-					n.Attr[i].Val = src.Val
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			traverseBody(c)
-		}
-		return nil
-	}
-
-	err := traverseBody(bodyNode)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // Generate html.Node within certain time
-func GenerateNode(pageList []*zip.File, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
+func GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
+	log.Println("Generating html.Node")
 	timer := time.After(4 * time.Second)
 	nodeList := []*html.Node{}
 	for _, v := range pageList {
 		select {
 		case <-timer:
+			log.Println("Timer expired")
 			return nodeList, nil
 		default:
-			bodies, err := GetBodiesNode(v)
-			ProcessBody(mappedZipFile, bodies)
-			nodeList = append(nodeList, bodies)
+			body, err := GetBodyNode(v.Page)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%s, for file %s", err, v.Page.Name)
 			}
+			err = ProcessBody(mappedZipFile, body, v)
+			if err != nil {
+				return nil, fmt.Errorf("%s, for file %s", err, v.Page.Name)
+			}
+			nodeList = append(nodeList, body)
 		}
 	}
 	return nodeList, nil
