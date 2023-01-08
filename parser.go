@@ -84,7 +84,13 @@ func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Pag
 	log.Println("Validating book file list")
 	pageList := []Page{}
 	// func getnave is ranging of guides first(reference) then items(manifest) and return marker for nav file? nad map of items
-
+	var navFile *zip.File
+	for _, v := range structure.Manifest.Items {
+		if v.Properties == "nav" {
+			navFile = mappedZipFile[filepath.Base(v.Href)]
+			// set nav here
+		}
+	}
 	for _, v := range structure.Spine.ItemRefs {
 		meta := make(map[string]string, 0)
 		page := mappedZipFile[v.IdRef]
@@ -96,9 +102,10 @@ func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Pag
 					meta["id"] = item.Href
 				}
 			}
-			//* change to map call to items from getNav()
 		}
-
+		if page.Name == navFile.Name {
+			meta["type"] = "nav"
+		}
 		pageList = append(pageList, Page{Page: page, Meta: meta})
 
 	}

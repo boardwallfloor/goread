@@ -36,7 +36,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// EnsureNav(structure.Guide.References, structure.Manifest.Items, mappedZipFile)
 	pageList := EnsurePageList(structure, mappedZipFile)
 
 	bodyNode, err := GenerateNode(pageList, mappedZipFile)

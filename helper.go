@@ -99,7 +99,7 @@ func EnsureNav(bodyNode *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "a" {
 			for i, v := range n.Attr {
 				if v.Key == "href" {
-					n.Attr[i].Val = fmt.Sprintf("#%s", n.Attr[i].Val)
+					n.Attr[i].Val = fmt.Sprintf("#%s", filepath.Base(n.Attr[i].Val))
 				}
 			}
 		}
@@ -213,7 +213,6 @@ func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page P
 	}
 	if page.Meta["type"] == "nav" {
 		log.Println("Modifying TOC")
-		// dp soemthing here
 		EnsureNav(bodyNode)
 	}
 	log.Printf("Processing body  of %s\n", page.Page.Name)
