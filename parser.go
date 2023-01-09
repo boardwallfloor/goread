@@ -16,7 +16,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func ReadEpub(path string) *zip.ReadCloser {
+func (app *App) ReadEpub(path string) *zip.ReadCloser {
 	log.Println("Reading epub")
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -28,7 +28,7 @@ func ReadEpub(path string) *zip.ReadCloser {
 // Search for content.opf
 // &
 // Map zip file with file name
-func MapContent(zr *zip.ReadCloser) (map[string]*zip.File, *zip.File, error) {
+func (app *App) MapContent(zr *zip.ReadCloser) (map[string]*zip.File, *zip.File, error) {
 	log.Println("Searching content.opf")
 	epubMap := make(map[string]*zip.File, 0)
 	var opf *zip.File
@@ -49,7 +49,7 @@ func MapContent(zr *zip.ReadCloser) (map[string]*zip.File, *zip.File, error) {
 }
 
 // Parse content.opf
-func CreateStructure(opf *zip.File) (Package, error) {
+func (app *App) CreateStructure(opf *zip.File) (Package, error) {
 	log.Println("Parsing content.opf")
 	log.Println("Opening xml zip")
 	xmlFile, err := opf.Open()
@@ -80,7 +80,7 @@ func CreateStructure(opf *zip.File) (Package, error) {
 }
 
 // Ensuring a list that contain all valid key to mappedZipFile of the needed file since <spine> are not guaranteed to be directly corelated to reference
-func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Page {
+func (app *App) EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Page {
 	log.Println("Validating book file list")
 	pageList := []Page{}
 	// func getnave is ranging of guides first(reference) then items(manifest) and return marker for nav file? nad map of items
@@ -113,7 +113,7 @@ func EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Pag
 }
 
 // Generate html.Node within certain time
-func GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
+func (app *App) GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
 	log.Println("Generating html.Node")
 	timer := time.After(4 * time.Second)
 	nodeList := []*html.Node{}
@@ -123,11 +123,11 @@ func GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.
 			log.Println("Timer expired")
 			return nodeList, nil
 		default:
-			body, err := GetBodyNode(v.Page)
+			body, err := app.GetBodyNode(v.Page)
 			if err != nil {
 				return nil, fmt.Errorf("%s, for file %s", err, v.Page.Name)
 			}
-			err = ProcessBody(mappedZipFile, body, v)
+			err = app.ProcessBody(mappedZipFile, body, v)
 			if err != nil {
 				return nil, fmt.Errorf("%s, for file %s", err, v.Page.Name)
 			}
@@ -138,7 +138,7 @@ func GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.
 }
 
 // Render the contents of the <body> tag as a string
-func RenderBody(nodes []*html.Node) (Book, error) {
+func (app *App) RenderBody(nodes []*html.Node) (Book, error) {
 	var bodyTmpl bytes.Buffer
 	for _, v := range nodes {
 		err := html.Render(&bodyTmpl, v)

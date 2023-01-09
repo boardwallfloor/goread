@@ -14,6 +14,15 @@ import (
 	"golang.org/x/net/html"
 )
 
+func contains(slice []string, element string) bool {
+	for _, value := range slice {
+		if value == element {
+			return true
+		}
+	}
+	return false
+}
+
 func PrintKey(epubMap map[string]*zip.File) {
 	for i := range epubMap {
 		fmt.Println(i)
@@ -37,7 +46,7 @@ func GetFirstTag(epubMap map[string]*zip.File, tag string) *zip.File {
 	return nil
 }
 
-func findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
+func (app *App) findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
 	// Check if the current node has the desired attribute and value
 	if n.Type == html.ElementNode {
 		for _, a := range n.Attr {
@@ -49,7 +58,7 @@ func findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
 
 	// Recursively search the child nodes
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if result := findNodeWithAttr(c, attr, value); result != nil {
+		if result := app.findNodeWithAttr(c, attr, value); result != nil {
 			return result
 		}
 	}
@@ -58,42 +67,16 @@ func findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
 	return nil
 }
 
-// func GetNavFile(references []Reference, items []Item, mappedZipFile map[string]*zip.File) (map[string]Item, error) {
-// 	var navFile *zip.File
-// 	// Check if toc section are in reference
-// 	for _, v := range references {
-// 		if v.Type == "toc" {
-// 			navFile = mappedZipFile[filepath.Base(v.Href)]
-// 			return navFile, nil
-// 		}
-// 	}
+func (app *App) EnsureNav(bodyNode *html.Node) {
 
-// 	// toc aren't in reference, searching on manifest for epub:type nav
-// 	var navKey Item
-// 	for _, v := range items {
-// 		if v.Properties == "nav" {
-// 			navKey = v
-// 		}
-// 	}
-
-// 	navFile = mappedZipFile[filepath.Base(navKey.Href)]
-// 	if navFile != nil {
-// 		return navFile, nil
-// 	}
-
-// 	return nil, errors.New("unable to find nav file")
-// }
-
-func EnsureNav(bodyNode *html.Node) {
-
-	node := findNodeWithAttr(bodyNode, "epub:type", "toc")
-	if node == nil {
-		notFoundError := fmt.Sprintf("attribute epub:type with value toc is not found on nav file `%s`", node.Data)
-		log.Fatal(errors.New(notFoundError))
-	}
-
-	divNode := node.Parent
-	listNode := findNodeWithAttr(divNode, "epub:type", "list")
+	// node := app.findNodeWithAttr(bodyNode, "epub:type", "toc")
+	// if node == nil {
+	// 	notFoundError := fmt.Sprintf("attribute epub:type with value toc is not found on nav file `%s`", node.Data)
+	// 	log.Fatal(errors.New(notFoundError))
+	// }
+	// log.Println("Modifying TOC file")
+	// divNode := node.Parent
+	// listNode := app.findNodeWithAttr(divNode, "epub:type", "list")
 	var traverseNode func(*html.Node) error
 	traverseNode = func(n *html.Node) error {
 		if n.Type == html.ElementNode && n.Data == "a" {
@@ -109,12 +92,12 @@ func EnsureNav(bodyNode *html.Node) {
 		}
 		return nil
 	}
-	traverseNode(listNode)
+	traverseNode(bodyNode)
 
 }
 
 // Check for mimetype file
-func CheckMime(zr *zip.File) error {
+func (app *App) CheckMime(zr *zip.File) error {
 	log.Println("Finding mimetype file")
 	if zr.Name != "mimetype" {
 		log.Fatal("mimetype file not found")
@@ -141,7 +124,7 @@ func CheckMime(zr *zip.File) error {
 }
 
 // Form html with asset encoded
-func GetBodyNode(page *zip.File) (*html.Node, error) {
+func (app *App) GetBodyNode(page *zip.File) (*html.Node, error) {
 	log.Println(page.Name)
 	pageRc, err := page.Open()
 	if err != nil {
@@ -174,7 +157,7 @@ func GetBodyNode(page *zip.File) (*html.Node, error) {
 }
 
 // Change body element to div and encode any image
-func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page Page) error {
+func (app *App) ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page Page) error {
 	var traverseBody func(*html.Node) error
 	traverseBody = func(n *html.Node) error {
 		if n.Type == html.ElementNode && n.Data == "body" {
@@ -183,27 +166,57 @@ func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page P
 			idAttr := html.Attribute{Key: "id", Val: page.Meta["id"]}
 			n.Attr = append(n.Attr, idAttr)
 		}
-		if n.Type == html.ElementNode && n.Data == "img" {
-			log.Println("Encoding image")
-			for i, v := range n.Attr {
-				if v.Key == "src" {
-					src := n.Attr[i]
-					imageStream := mappedZipFile[filepath.Base(src.Val)]
-					rc, err := imageStream.Open()
-					if err != nil {
-						return err
-					}
-					data, err := io.ReadAll(rc)
-					if err != nil {
-						return err
-					}
+		if n.Type == html.ElementNode {
+			if n.Data == "img" || n.Data == "image" {
+				log.Println("Encoding image")
+				for i, v := range n.Attr {
+					if v.Key == "src" {
+						src := n.Attr[i]
+						imageStream := mappedZipFile[filepath.Base(src.Val)]
+						rc, err := imageStream.Open()
+						if err != nil {
+							return err
+						}
+						data, err := io.ReadAll(rc)
+						if err != nil {
+							return err
+						}
 
-					// Encode the image data as a base64 string
-					encoded := base64.StdEncoding.EncodeToString(data)
-					rc.Close()
-					src.Val = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
-					n.Attr[i].Val = src.Val
+						// Encode the image data as a base64 string
+						encoded := base64.StdEncoding.EncodeToString(data)
+						rc.Close()
+						src.Val = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
+						n.Attr[i].Val = src.Val
+					}
+					if v.Key == "href" && v.Namespace == "xlink" {
+						src := n.Attr[i]
+
+						imageStream := mappedZipFile[filepath.Base(src.Val)]
+						rc, err := imageStream.Open()
+						if err != nil {
+							return err
+						}
+						data, err := io.ReadAll(rc)
+						if err != nil {
+							return err
+						}
+						ext := ".jpeg"
+						allowedExtensions := []string{".jpg", ".jpeg", ".png", ".gif"}
+						if contains(allowedExtensions, filepath.Ext(src.Val)) {
+							ext = filepath.Ext(src.Val)
+							ext = strings.TrimLeft(ext, ".")
+						} else {
+							// TODO : add alt text if img, if svg add title and desc element as child
+							ext = strings.TrimLeft(ext, ".")
+						}
+						// Encode the image data as a base64 string
+						encoded := base64.StdEncoding.EncodeToString(data)
+						rc.Close()
+						src.Val = fmt.Sprintf("data:image/%s;base64,%s", ext, encoded)
+						n.Attr[i].Val = src.Val
+					}
 				}
+
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -213,7 +226,7 @@ func ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page P
 	}
 	if page.Meta["type"] == "nav" {
 		log.Println("Modifying TOC")
-		EnsureNav(bodyNode)
+		app.EnsureNav(bodyNode)
 	}
 	log.Printf("Processing body  of %s\n", page.Page.Name)
 	err := traverseBody(bodyNode)
