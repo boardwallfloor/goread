@@ -46,26 +46,26 @@ func GetFirstTag(epubMap map[string]*zip.File, tag string) *zip.File {
 	return nil
 }
 
-func (app *App) findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
-	// Check if the current node has the desired attribute and value
-	if n.Type == html.ElementNode {
-		for _, a := range n.Attr {
-			if a.Key == attr && a.Val == value {
-				return n
-			}
-		}
-	}
+// func (app *App) findNodeWithAttr(n *html.Node, attr, value string) *html.Node {
+// 	// Check if the current node has the desired attribute and value
+// 	if n.Type == html.ElementNode {
+// 		for _, a := range n.Attr {
+// 			if a.Key == attr && a.Val == value {
+// 				return n
+// 			}
+// 		}
+// 	}
 
-	// Recursively search the child nodes
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if result := app.findNodeWithAttr(c, attr, value); result != nil {
-			return result
-		}
-	}
+// 	// Recursively search the child nodes
+// 	for c := n.FirstChild; c != nil; c = c.NextSibling {
+// 		if result := app.findNodeWithAttr(c, attr, value); result != nil {
+// 			return result
+// 		}
+// 	}
 
-	// If the node and its children do not match, return nil
-	return nil
-}
+// 	// If the node and its children do not match, return nil
+// 	return nil
+// }
 
 func (app *App) EnsureNav(bodyNode *html.Node) {
 
