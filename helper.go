@@ -216,6 +216,8 @@ func (app *App) ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.N
 						n.Attr[i].Val = src.Val
 					}
 				}
+				lazyAttr := html.Attribute{Key: "loading", Val: "lazy"}
+				n.Attr = append(n.Attr, lazyAttr)
 
 			}
 		}

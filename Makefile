@@ -1,6 +1,6 @@
 rerun :
 	go build
-	./goread
+	./goread $(flags)
 reprof :
 	go build
 	./goread -cpuprofile=perf.prof

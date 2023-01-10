@@ -37,7 +37,7 @@ func (app *App) goRead() {
 		log.Fatal(err)
 	}
 
-	book, err := app.RenderBody(bodyNode)
+	book, err := app.RenderBody(bodyNode, structure.Metadata)
 	if err != nil {
 		log.Fatal(err)
 	}

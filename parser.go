@@ -138,7 +138,7 @@ func (app *App) GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File
 }
 
 // Render the contents of the <body> tag as a string
-func (app *App) RenderBody(nodes []*html.Node) (Book, error) {
+func (app *App) RenderBody(nodes []*html.Node, meta Metadata) (Book, error) {
 	var bodyTmpl bytes.Buffer
 	for _, v := range nodes {
 		err := html.Render(&bodyTmpl, v)
@@ -153,7 +153,7 @@ func (app *App) RenderBody(nodes []*html.Node) (Book, error) {
 		return Book{}, err
 	}
 	book := Book{
-		Title: "My Page",
+		Title: meta.Title,
 		Body:  template.HTML(strBody.String()),
 	}
 	return book, nil
