@@ -2,18 +2,21 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
 	"os"
 	"runtime/pprof"
 )
 
 type App struct {
-	title string
-	port  string
-	mode  string
+	title    string
+	port     string
+	mode     string
+	infoLog  *log.Logger
+	errorLog *log.Logger
 }
 
-func (app *App) goRead() {
+func (app *App) read() {
 	zipReader := app.ReadEpub(app.title)
 	err := app.CheckMime(zipReader.File[0])
 	if err != nil {
@@ -52,6 +55,7 @@ func main() {
 	title := flag.String("read", "", "read book")
 	port := flag.String("port", "8080", "set port")
 	mode := flag.String("mode", "", "set mode")
+	verbose := flag.String("verbose", "discrete", "set log output noise")
 	flag.Parse()
 
 	if *title == "" {
@@ -66,6 +70,12 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	app := App{title: *title, port: *port, mode: *mode}
-	app.goRead()
+	infoLog := log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
+	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
+	if *verbose == "quiet" {
+		infoLog.SetOutput(io.Discard)
+		errorLog.SetOutput(io.Discard)
+	}
+	app := App{title: *title, port: *port, mode: *mode, infoLog: infoLog, errorLog: errorLog}
+	app.read()
 }

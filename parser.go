@@ -9,7 +9,9 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,11 +19,16 @@ import (
 )
 
 func (app *App) ReadEpub(path string) *zip.ReadCloser {
-	log.Println("Reading epub")
+	app.infoLog.Println("Reading epub")
 	r, err := zip.OpenReader(path)
 	if err != nil {
 		log.Fatal(err)
 	}
+	size, err := os.Stat(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Reading :%s, with size :%d", path, size.Size())
 	return r
 }
 
@@ -29,42 +36,45 @@ func (app *App) ReadEpub(path string) *zip.ReadCloser {
 // &
 // Map zip file with file name
 func (app *App) MapContent(zr *zip.ReadCloser) (map[string]*zip.File, *zip.File, error) {
-	log.Println("Searching content.opf")
+	app.infoLog.Println("Searching content.opf")
 	epubMap := make(map[string]*zip.File, 0)
 	var opf *zip.File
 
+	opfRegex := regexp.MustCompile(`^.*\.opf$`)
+
 	for _, v := range zr.File {
 		epubMap[filepath.Base(v.Name)] = v
-		if filepath.Base(v.Name) == "content.opf" {
+		if opfRegex.MatchString(filepath.Base(v.Name)) {
 			opf = v
-			log.Println("content.opf found")
+			app.infoLog.Println("content.opf found")
 		}
 
 	}
 
-	if filepath.Base(opf.Name) != "content.opf" {
+	if opf == nil {
 		return nil, nil, errors.New("content.opf not found")
 	}
+
 	return epubMap, opf, nil
 }
 
 // Parse content.opf
 func (app *App) CreateStructure(opf *zip.File) (Package, error) {
-	log.Println("Parsing content.opf")
-	log.Println("Opening xml zip")
+	app.infoLog.Println("Parsing content.opf")
+	app.infoLog.Println("Opening xml zip")
 	xmlFile, err := opf.Open()
 	if err != nil {
 		return Package{}, err
 	}
-	log.Println("XML file open")
+	app.infoLog.Println("XML file open")
 
-	log.Println("Reading XML")
+	app.infoLog.Println("Reading XML")
 	xmlstream, err := io.ReadAll(xmlFile)
 	if err != nil {
 		return Package{}, err
 	}
 
-	log.Println("Converting XML")
+	app.infoLog.Println("Converting XML")
 	var content Package
 	err = xml.Unmarshal(xmlstream, &content)
 	if err != nil {
@@ -75,13 +85,13 @@ func (app *App) CreateStructure(opf *zip.File) (Package, error) {
 	if err != nil {
 		return Package{}, err
 	}
-	log.Println("Parsing content.opf succeed")
+	app.infoLog.Println("Parsing content.opf succeed")
 	return content, nil
 }
 
 // Ensuring a list that contain all valid key to mappedZipFile of the needed file since <spine> are not guaranteed to be directly corelated to reference
 func (app *App) EnsurePageList(structure Package, mappedZipFile map[string]*zip.File) []Page {
-	log.Println("Validating book file list")
+	app.infoLog.Println("Validating book file list")
 	pageList := []Page{}
 	// func getnave is ranging of guides first(reference) then items(manifest) and return marker for nav file? nad map of items
 	var navFile *zip.File
@@ -114,13 +124,13 @@ func (app *App) EnsurePageList(structure Package, mappedZipFile map[string]*zip.
 
 // Generate html.Node within certain time
 func (app *App) GenerateNode(pageList []Page, mappedZipFile map[string]*zip.File) ([]*html.Node, error) {
-	log.Println("Generating html.Node")
+	app.infoLog.Println("Generating html.Node")
 	timer := time.After(4 * time.Second)
 	nodeList := []*html.Node{}
 	for _, v := range pageList {
 		select {
 		case <-timer:
-			log.Println("Timer expired")
+			app.infoLog.Println("Timer expired")
 			return nodeList, nil
 		default:
 			body, err := app.GetBodyNode(v.Page)

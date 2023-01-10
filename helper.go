@@ -2,15 +2,19 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"io"
 	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/chai2010/webp"
 	"golang.org/x/net/html"
 )
 
@@ -74,7 +78,7 @@ func (app *App) EnsureNav(bodyNode *html.Node) {
 	// 	notFoundError := fmt.Sprintf("attribute epub:type with value toc is not found on nav file `%s`", node.Data)
 	// 	log.Fatal(errors.New(notFoundError))
 	// }
-	// log.Println("Modifying TOC file")
+	// app.infoLog.Println("Modifying TOC file")
 	// divNode := node.Parent
 	// listNode := app.findNodeWithAttr(divNode, "epub:type", "list")
 	var traverseNode func(*html.Node) error
@@ -98,11 +102,11 @@ func (app *App) EnsureNav(bodyNode *html.Node) {
 
 // Check for mimetype file
 func (app *App) CheckMime(zr *zip.File) error {
-	log.Println("Finding mimetype file")
+	app.infoLog.Println("Finding mimetype file")
 	if zr.Name != "mimetype" {
 		log.Fatal("mimetype file not found")
 	}
-	log.Println("mimetype found")
+	app.infoLog.Println("mimetype found")
 	mimeRc, err := zr.Open()
 	if err != nil {
 		return err
@@ -118,21 +122,21 @@ func (app *App) CheckMime(zr *zip.File) error {
 	if mimetype != "application/epub+zip" {
 		return errors.New("invalid mimetype")
 	}
-	log.Printf("mimetype : %s\n", mimetype)
-	log.Println("mimetype confirmed")
+	app.infoLog.Printf("mimetype : %s\n", mimetype)
+	app.infoLog.Println("mimetype confirmed")
 	return nil
 }
 
 // Form html with asset encoded
 func (app *App) GetBodyNode(page *zip.File) (*html.Node, error) {
-	log.Println(page.Name)
+	app.infoLog.Println(page.Name)
 	pageRc, err := page.Open()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Parse the HTML byte slice into a node tree
-	log.Println("Create node")
+	app.infoLog.Println("Create node")
 	doc, err := html.Parse(pageRc)
 	if err != nil {
 		return nil, err
@@ -150,25 +154,26 @@ func (app *App) GetBodyNode(page *zip.File) (*html.Node, error) {
 			findBody(c)
 		}
 	}
-	log.Println("Finding body")
+	app.infoLog.Println("Finding body")
 	findBody(doc)
-	log.Println("Body found")
+	app.infoLog.Println("Body found")
 	return bodyNode, nil
 }
 
 // Change body element to div and encode any image
+// TODO : Reformat this to look better and more efficient
 func (app *App) ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.Node, page Page) error {
 	var traverseBody func(*html.Node) error
 	traverseBody = func(n *html.Node) error {
 		if n.Type == html.ElementNode && n.Data == "body" {
-			log.Println("Modifying body to div")
+			app.infoLog.Println("Modifying body to div")
 			n.Data = "div"
 			idAttr := html.Attribute{Key: "id", Val: page.Meta["id"]}
 			n.Attr = append(n.Attr, idAttr)
 		}
 		if n.Type == html.ElementNode {
 			if n.Data == "img" || n.Data == "image" {
-				log.Println("Encoding image")
+				app.infoLog.Println("Encoding image")
 				for i, v := range n.Attr {
 					if v.Key == "src" {
 						src := n.Attr[i]
@@ -177,13 +182,26 @@ func (app *App) ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.N
 						if err != nil {
 							return err
 						}
-						data, err := io.ReadAll(rc)
+						// data, err := io.ReadAll(rc)
+						// if err != nil {
+						// 	return err
+						// }
+						img, format, _ := image.Decode(rc)
+
+						// check image format
+						if format != "jpeg" && format != "png" {
+							fmt.Println("only jpeg and png images are supported")
+							return fmt.Errorf("only jpeg and png images are supported, instead of %s", format)
+						}
+
+						// convert to webp
+						buf := new(bytes.Buffer)
+						err = webp.Encode(buf, img, &webp.Options{Quality: 80})
 						if err != nil {
 							return err
 						}
-
 						// Encode the image data as a base64 string
-						encoded := base64.StdEncoding.EncodeToString(data)
+						encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
 						rc.Close()
 						src.Val = fmt.Sprintf("data:image/jpeg;base64,%s", encoded)
 						n.Attr[i].Val = src.Val
@@ -227,14 +245,14 @@ func (app *App) ProcessBody(mappedZipFile map[string]*zip.File, bodyNode *html.N
 		return nil
 	}
 	if page.Meta["type"] == "nav" {
-		log.Println("Modifying TOC")
+		app.infoLog.Println("Modifying TOC")
 		app.EnsureNav(bodyNode)
 	}
-	log.Printf("Processing body  of %s\n", page.Page.Name)
+	app.infoLog.Printf("Processing body  of %s\n", page.Page.Name)
 	err := traverseBody(bodyNode)
 	if err != nil {
 		return err
 	}
-	log.Println("Finished processing")
+	app.infoLog.Println("Finished processing")
 	return nil
 }
